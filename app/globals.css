@@ -84,6 +84,31 @@ h1 {
   gap: 8px;
 }
 
+.summary-column {
+  display: grid;
+  gap: 10px;
+}
+
+.data-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.data-actions button,
+.observation-row button {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(255, 255, 255, 0.68);
+  cursor: pointer;
+}
+
+.data-actions button {
+  padding: 9px 11px;
+  font-size: 11px;
+}
+
 .summary-grid article {
   min-height: 112px;
   padding: 16px;
@@ -238,6 +263,13 @@ select:focus {
   line-height: 1.7;
 }
 
+.source-line {
+  margin: -6px 0 18px;
+  color: var(--accent);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+}
+
 .variant-box {
   display: grid;
   gap: 10px;
@@ -275,6 +307,24 @@ select:focus {
 
 .result-row select {
   width: 180px;
+}
+
+.observation-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.observation-row textarea {
+  min-height: 74px;
+}
+
+.observation-row button {
+  min-height: 74px;
+  padding: 12px;
+  color: var(--accent);
+  font-weight: 750;
 }
 
 @media (max-width: 760px) {
@@ -327,5 +377,9 @@ select:focus {
 
   .result-row select {
     width: 100%;
+  }
+
+  .observation-row {
+    grid-template-columns: 1fr;
   }
 }

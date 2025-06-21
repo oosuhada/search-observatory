@@ -1,8 +1,9 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
 type ExperimentStatus = 'running' | 'won' | 'lost' | 'inconclusive';
+type MetricDirection = 'higher' | 'lower';
 
 type SearchExperiment = {
   id: string;
@@ -11,9 +12,12 @@ type SearchExperiment = {
   control: string;
   variant: string;
   metric: string;
+  metricDirection: MetricDirection;
   controlValue: number;
   variantValue: number;
   status: ExperimentStatus;
+  source: string;
+  observation: string;
   createdAt: string;
 };
 
@@ -27,9 +31,12 @@ const initialExperiments: SearchExperiment[] = [
     control: '기본 metadata만 적용',
     variant: 'metadata + FAQ JSON-LD 적용',
     metric: '첫 노출까지 걸린 시간 (h)',
+    metricDirection: 'lower',
     controlValue: 31,
     variantValue: 17,
     status: 'won',
+    source: 'Google Search Console / URL inspection',
+    observation: '동일 템플릿의 신규 페이지를 비교했고 Variant가 14시간 빨리 첫 노출됐다.',
     createdAt: new Date().toISOString(),
   },
 ];
@@ -41,6 +48,22 @@ const statusLabel: Record<ExperimentStatus, string> = {
   inconclusive: 'INCONCLUSIVE',
 };
 
+const normalizeExperiment = (experiment: Partial<SearchExperiment>): SearchExperiment => ({
+  id: experiment.id ?? crypto.randomUUID(),
+  question: experiment.question ?? '',
+  hypothesis: experiment.hypothesis ?? '',
+  control: experiment.control ?? '',
+  variant: experiment.variant ?? '',
+  metric: experiment.metric ?? 'CTR (%)',
+  metricDirection: experiment.metricDirection ?? 'higher',
+  controlValue: experiment.controlValue ?? 0,
+  variantValue: experiment.variantValue ?? 0,
+  status: experiment.status ?? 'running',
+  source: experiment.source ?? '',
+  observation: experiment.observation ?? '',
+  createdAt: experiment.createdAt ?? new Date().toISOString(),
+});
+
 export default function HomePage() {
   const [experiments, setExperiments] = useState<SearchExperiment[]>(initialExperiments);
   const [question, setQuestion] = useState('');
@@ -48,13 +71,17 @@ export default function HomePage() {
   const [control, setControl] = useState('');
   const [variant, setVariant] = useState('');
   const [metric, setMetric] = useState('CTR (%)');
+  const [metricDirection, setMetricDirection] = useState<MetricDirection>('higher');
+  const [source, setSource] = useState('');
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY);
     if (!saved) return;
 
     try {
-      setExperiments(JSON.parse(saved) as SearchExperiment[]);
+      const parsed = JSON.parse(saved) as Array<Partial<SearchExperiment>>;
+      setExperiments(parsed.map(normalizeExperiment));
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
     }
@@ -86,9 +113,12 @@ export default function HomePage() {
       control: control.trim(),
       variant: variant.trim(),
       metric: metric.trim() || 'Metric',
+      metricDirection,
       controlValue: 0,
       variantValue: 0,
       status: 'running',
+      source: source.trim(),
+      observation: '',
       createdAt: new Date().toISOString(),
     };
 
@@ -97,11 +127,12 @@ export default function HomePage() {
     setHypothesis('');
     setControl('');
     setVariant('');
+    setSource('');
   };
 
   const updateResult = (
     id: string,
-    patch: Partial<Pick<SearchExperiment, 'controlValue' | 'variantValue' | 'status'>>,
+    patch: Partial<Pick<SearchExperiment, 'controlValue' | 'variantValue' | 'status' | 'observation'>>,
   ) => {
     persist(
       experiments.map((experiment) =>
@@ -114,6 +145,45 @@ export default function HomePage() {
     persist(experiments.filter((experiment) => experiment.id !== id));
   };
 
+  const judgeExperiment = (experiment: SearchExperiment) => {
+    if (experiment.controlValue === experiment.variantValue) {
+      updateResult(experiment.id, { status: 'inconclusive' });
+      return;
+    }
+
+    const variantWon = experiment.metricDirection === 'higher'
+      ? experiment.variantValue > experiment.controlValue
+      : experiment.variantValue < experiment.controlValue;
+    updateResult(experiment.id, { status: variantWon ? 'won' : 'lost' });
+  };
+
+  const exportExperiments = () => {
+    const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), experiments }, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `search-observatory-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importExperiments = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const payload = JSON.parse(await file.text()) as
+        | { experiments?: Array<Partial<SearchExperiment>> }
+        | Array<Partial<SearchExperiment>>;
+      const imported = Array.isArray(payload) ? payload : payload.experiments;
+      if (!Array.isArray(imported)) return;
+      persist(imported.map(normalizeExperiment));
+    } finally {
+      event.target.value = '';
+    }
+  };
+
   return (
     <main className="shell">
       <header className="hero">
@@ -124,7 +194,8 @@ export default function HomePage() {
             metadata, structured data, 내부 링크, 콘텐츠 구조 같은 변경을 가설과 결과로 남겨 실제로 무엇이 작동했는지 축적합니다.
           </p>
         </div>
-        <div className="summary-grid">
+        <div className="summary-column">
+          <div className="summary-grid">
           <article>
             <span>TOTAL</span>
             <strong>{summary.total}</strong>
@@ -137,6 +208,12 @@ export default function HomePage() {
             <span>VARIANT WIN</span>
             <strong>{summary.variantWinRate}%</strong>
           </article>
+          </div>
+          <div className="data-actions">
+            <button type="button" onClick={exportExperiments}>JSON 내보내기</button>
+            <button type="button" onClick={() => importInputRef.current?.click()}>JSON 가져오기</button>
+            <input ref={importInputRef} type="file" accept="application/json" onChange={importExperiments} hidden />
+          </div>
         </div>
       </header>
 
@@ -173,9 +250,22 @@ export default function HomePage() {
               <input value={variant} onChange={(event) => setVariant(event.target.value)} placeholder="변경 상태" />
             </label>
           </div>
+          <div className="two-column">
+            <label>
+              <span>Primary metric</span>
+              <input value={metric} onChange={(event) => setMetric(event.target.value)} />
+            </label>
+            <label>
+              <span>Winning direction</span>
+              <select value={metricDirection} onChange={(event) => setMetricDirection(event.target.value as MetricDirection)}>
+                <option value="higher">높을수록 좋음</option>
+                <option value="lower">낮을수록 좋음</option>
+              </select>
+            </label>
+          </div>
           <label>
-            <span>Primary metric</span>
-            <input value={metric} onChange={(event) => setMetric(event.target.value)} />
+            <span>Evidence source</span>
+            <input value={source} onChange={(event) => setSource(event.target.value)} placeholder="Search Console, analytics query, crawl log, experiment URL…" />
           </label>
           <button className="primary-button" type="submit">
             실험 시작
@@ -201,6 +291,7 @@ export default function HomePage() {
               </div>
 
               {experiment.hypothesis && <p className="hypothesis">{experiment.hypothesis}</p>}
+              {experiment.source && <p className="source-line">SOURCE · {experiment.source}</p>}
 
               <div className="variant-grid">
                 <div className="variant-box">
@@ -245,6 +336,14 @@ export default function HomePage() {
                   <option value="lost">Control 승리</option>
                   <option value="inconclusive">결론 없음</option>
                 </select>
+              </div>
+              <div className="observation-row">
+                <textarea
+                  value={experiment.observation}
+                  onChange={(event) => updateResult(experiment.id, { observation: event.target.value })}
+                  placeholder="실험 중 관찰한 조건, 교란 요인, 다음 실험에서 확인할 점을 남기세요."
+                />
+                <button type="button" onClick={() => judgeExperiment(experiment)}>지표 기준 자동 판정</button>
               </div>
             </article>
           );
