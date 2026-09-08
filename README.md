@@ -4,6 +4,12 @@ Search Observatory is a personal SEO/search R&D notebook for designing controlle
 
 Instead of collecting generic optimization checklists, the app stores a question, hypothesis, control, variant, primary metric, expected metric direction, evidence source, observations, and final outcome for each experiment.
 
+## Measurement discipline
+
+The experiment judge no longer declares a winner from one control value and one variant value. Each arm accepts repeated observations, computes the mean effect in the declared metric direction, and uses a fixed-seed non-parametric bootstrap. Fewer than three observations per arm, or a 95% interval crossing zero, is reported as **inconclusive** rather than a win.
+
+The checked-in `benchmarks/experiment-judge.json` is a synthetic protocol verification artifact, not an SEO performance claim. It records the fixed seed, bootstrap configuration, Git revision, and explicit limitations. Run `npm run check` to reproduce the tests, benchmark artifact, and production build.
+
 ## Product preview
 
 | Experiment workspace | Research notebook view |

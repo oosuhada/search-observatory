@@ -1,9 +1,9 @@
 'use client';
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { evaluateExperiment, parseRuns, type MetricDirection } from '../lib/experiment-stats';
 
 type ExperimentStatus = 'running' | 'won' | 'lost' | 'inconclusive';
-type MetricDirection = 'higher' | 'lower';
 
 type SearchExperiment = {
   id: string;
@@ -15,6 +15,8 @@ type SearchExperiment = {
   metricDirection: MetricDirection;
   controlValue: number;
   variantValue: number;
+  controlRuns: number[];
+  variantRuns: number[];
   status: ExperimentStatus;
   source: string;
   observation: string;
@@ -34,9 +36,11 @@ const initialExperiments: SearchExperiment[] = [
     metricDirection: 'lower',
     controlValue: 31,
     variantValue: 17,
-    status: 'won',
-    source: 'Google Search Console / URL inspection',
-    observation: '동일 템플릿의 신규 페이지를 비교했고 Variant가 14시간 빨리 첫 노출됐다.',
+    controlRuns: [31],
+    variantRuns: [17],
+    status: 'inconclusive',
+    source: 'Synthetic UI example — replace with Search Console / URL inspection observations',
+    observation: '단일 관측은 예시일 뿐 승리 근거가 아닙니다. 각 arm에 최소 3회 반복 관측을 입력해야 자동 판정됩니다.',
     createdAt: new Date().toISOString(),
   },
 ];
@@ -58,6 +62,8 @@ const normalizeExperiment = (experiment: Partial<SearchExperiment>): SearchExper
   metricDirection: experiment.metricDirection ?? 'higher',
   controlValue: experiment.controlValue ?? 0,
   variantValue: experiment.variantValue ?? 0,
+  controlRuns: experiment.controlRuns?.length ? experiment.controlRuns : [experiment.controlValue ?? 0],
+  variantRuns: experiment.variantRuns?.length ? experiment.variantRuns : [experiment.variantValue ?? 0],
   status: experiment.status ?? 'running',
   source: experiment.source ?? '',
   observation: experiment.observation ?? '',
@@ -116,6 +122,8 @@ export default function HomePage() {
       metricDirection,
       controlValue: 0,
       variantValue: 0,
+      controlRuns: [],
+      variantRuns: [],
       status: 'running',
       source: source.trim(),
       observation: '',
@@ -132,7 +140,7 @@ export default function HomePage() {
 
   const updateResult = (
     id: string,
-    patch: Partial<Pick<SearchExperiment, 'controlValue' | 'variantValue' | 'status' | 'observation'>>,
+    patch: Partial<Pick<SearchExperiment, 'controlValue' | 'variantValue' | 'controlRuns' | 'variantRuns' | 'status' | 'observation'>>,
   ) => {
     persist(
       experiments.map((experiment) =>
@@ -146,15 +154,8 @@ export default function HomePage() {
   };
 
   const judgeExperiment = (experiment: SearchExperiment) => {
-    if (experiment.controlValue === experiment.variantValue) {
-      updateResult(experiment.id, { status: 'inconclusive' });
-      return;
-    }
-
-    const variantWon = experiment.metricDirection === 'higher'
-      ? experiment.variantValue > experiment.controlValue
-      : experiment.variantValue < experiment.controlValue;
-    updateResult(experiment.id, { status: variantWon ? 'won' : 'lost' });
+    const result = evaluateExperiment(experiment.controlRuns, experiment.variantRuns, experiment.metricDirection);
+    updateResult(experiment.id, { status: result.decision });
   };
 
   const exportExperiments = () => {
@@ -275,7 +276,10 @@ export default function HomePage() {
 
       <section className="experiment-list">
         {experiments.map((experiment) => {
-          const delta = experiment.variantValue - experiment.controlValue;
+          const stats = experiment.controlRuns.length && experiment.variantRuns.length
+            ? evaluateExperiment(experiment.controlRuns, experiment.variantRuns, experiment.metricDirection)
+            : null;
+          const delta = stats ? stats.variantMean - stats.controlMean : 0;
           const deltaLabel = delta === 0 ? '—' : `${delta > 0 ? '+' : ''}${delta.toFixed(1)}`;
 
           return (
@@ -298,25 +302,27 @@ export default function HomePage() {
                   <span>CONTROL A</span>
                   <strong>{experiment.control}</strong>
                   <input
-                    type="number"
-                    step="0.1"
-                    value={experiment.controlValue}
+                    type="text"
+                    value={experiment.controlRuns.join(', ')}
+                    placeholder="31, 29, 33"
                     onChange={(event) =>
-                      updateResult(experiment.id, { controlValue: Number(event.target.value) })
+                      updateResult(experiment.id, { controlRuns: parseRuns(event.target.value) })
                     }
                   />
+                  <small>{stats ? `mean ${stats.controlMean.toFixed(2)} · n=${stats.controlRuns}` : '반복 관측 입력'}</small>
                 </div>
                 <div className="variant-box emphasis">
                   <span>VARIANT B</span>
                   <strong>{experiment.variant}</strong>
                   <input
-                    type="number"
-                    step="0.1"
-                    value={experiment.variantValue}
+                    type="text"
+                    value={experiment.variantRuns.join(', ')}
+                    placeholder="17, 18, 16"
                     onChange={(event) =>
-                      updateResult(experiment.id, { variantValue: Number(event.target.value) })
+                      updateResult(experiment.id, { variantRuns: parseRuns(event.target.value) })
                     }
                   />
+                  <small>{stats ? `mean ${stats.variantMean.toFixed(2)} · n=${stats.variantRuns}` : '반복 관측 입력'}</small>
                 </div>
               </div>
 
@@ -324,6 +330,7 @@ export default function HomePage() {
                 <div>
                   <span>{experiment.metric}</span>
                   <strong>{deltaLabel} delta</strong>
+                  {stats && Number.isFinite(stats.ci95[0]) ? <small>95% bootstrap CI · {stats.ci95[0].toFixed(2)} to {stats.ci95[1].toFixed(2)}</small> : <small>minimum 3 runs / arm</small>}
                 </div>
                 <select
                   value={experiment.status}
