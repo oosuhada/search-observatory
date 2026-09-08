@@ -1,0 +1,34 @@
+name: experiment-quality
+
+on:
+  pull_request:
+  push:
+    branches: [main, "feat/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run test
+      - run: npm run benchmark
+      - name: Enforce experiment-decision regression gate
+        run: |
+          node - <<'NODE'
+          const data = require('./benchmarks/experiment-judge.json');
+          const clear = data.results.find((item) => item.id === 'clear-win-lower');
+          const overlap = data.results.find((item) => item.id === 'overlap-higher');
+          const underpowered = data.results.find((item) => item.id === 'underpowered');
+          if (clear.decision !== 'won') process.exit(1);
+          if (overlap.decision !== 'inconclusive') process.exit(1);
+          if (underpowered.decision !== 'inconclusive') process.exit(1);
+          NODE
+      - run: npm run build

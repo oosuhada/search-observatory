@@ -5,7 +5,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "benchmark": "node --experimental-strip-types scripts/benchmark-experiment-judge.ts",
+    "check": "npm run test && npm run benchmark && npm run build"
   },
   "dependencies": {
     "next": "16.3.3",
@@ -17,5 +20,6 @@
     "@types/react": "^19.0.14",
     "@types/react-dom": "^19.0.6",
     "typescript": "^5.8.3"
-  }
+  },
+  "type": "module"
 }
