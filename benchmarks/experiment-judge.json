@@ -1,7 +1,7 @@
 {
   "experiment": "search-observatory-repeated-measurement-judge-v1",
-  "git_sha": "e709b157bdbbda197451de2c8ba1726aa6793524",
-  "generated_at": "2026-09-08T13:20:48.785Z",
+  "git_sha": "e1d256a02f55127c781f417455dc7cb6a49de67f",
+  "generated_at": "2026-09-08T13:24:27.171Z",
   "seed": 20260908,
   "bootstrap_samples": 2000,
   "protocol": "unpaired non-parametric bootstrap of direction-normalized mean difference",
